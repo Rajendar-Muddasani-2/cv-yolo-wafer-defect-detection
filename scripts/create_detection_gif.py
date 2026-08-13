@@ -1,606 +1,417 @@
 #!/usr/bin/env python3
-"""
-YOLO Wafer Defect Detection — LinkedIn GIF Animation
+"""Create a LinkedIn-ready, evidence-grounded YOLOv8-L project walkthrough.
 
-Post-silicon wafer defect detection walkthrough using YOLOv8-L.
-- Starts with realistic wafer image (not text slide)
-- Ends with annotated wafer + real benchmark numbers
-- Realistic silicon gray/silver wafer color
-- 13×13 grid with thick, visible lines (width=3)
-- 2× larger text for numbers and right-side content
-- Real benchmark numbers: T4 FP16 + A100 TensorRT
-
-Target: ~30s @ 3 FPS, <8MB, LinkedIn-optimized (900×620)
+Every empirical value is loaded from a committed result artifact or produced by
+the trained checkpoint. Architecture frames are explicitly labeled as schematic.
 """
 
+import json
 from pathlib import Path
-import numpy as np
+from typing import Any
+
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parent.parent
-REALISTIC_DIR = ROOT / "outputs" / "realistic_unseen"
+INPUT_IMAGE = ROOT / "outputs" / "realistic_unseen" / "realistic_05.jpg"
 OUTPUT_GIF = ROOT / "outputs" / "yolo_wafer_detection.gif"
+RESULTS_JSON = ROOT / "outputs" / "results_summary.json"
+TRT_JSON = ROOT / "outputs" / "tensorrt_results" / "tensorrt_benchmark_results.json"
+T4_JSON = ROOT / "outputs" / "gpu_stack_results" / "gpu_stack_results.json"
 
-# ── Canvas ──
-W, H = 900, 620
-BG = (10, 14, 22)
-PANEL_BG = (18, 22, 34)
-ACCENT = (0, 200, 255)
-GREEN = (0, 230, 120)
-RED = (255, 65, 80)
-YELLOW = (255, 215, 50)
-ORANGE = (255, 140, 40)
-WHITE = (235, 240, 250)
-DIM = (120, 140, 170)
-GRID_COL = (90, 130, 200)
+W, H = 1200, 675
+FPS = 4
+FRAME_MS = 250
+
+BG = (8, 12, 18)
+SURFACE = (16, 23, 32)
+SURFACE_2 = (23, 32, 43)
+LINE = (53, 69, 84)
+WHITE = (240, 245, 248)
+MUTED = (155, 171, 184)
+CYAN = (37, 209, 255)
+GREEN = (37, 224, 145)
+YELLOW = (255, 210, 64)
+CORAL = (255, 105, 97)
 
 CLASS_COLORS = {
-    "scratch": (255, 100, 100), "particle": (100, 200, 255),
-    "edge_chip": (255, 255, 80), "void": (200, 100, 255),
-    "crack": (255, 80, 80), "contamination": (255, 200, 100),
-    "delamination": (150, 220, 255), "pattern_shift": (255, 160, 50),
-    "bridge": (100, 255, 180), "missing_bond": (255, 100, 200),
+    "scratch": CORAL,
+    "particle": CYAN,
+    "edge_chip": YELLOW,
+    "void": (190, 125, 255),
+    "pattern_shift": (255, 157, 67),
+    "bridge": (93, 238, 188),
+    "missing_bond": (255, 114, 190),
+    "crack": (255, 89, 89),
+    "contamination": (255, 190, 92),
+    "delamination": (117, 202, 255),
 }
 
-FPS = 3
-FRAME_MS = 333
-GRID_N = 13
 
-
-def _font(sz):
-    for p in ["/System/Library/Fonts/Helvetica.ttc",
-              "/System/Library/Fonts/SFNSMono.ttf",
-              "/Library/Fonts/Arial.ttf",
-              "/System/Library/Fonts/Supplemental/Arial.ttf"]:
+def font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    names = [
+        "/System/Library/Fonts/HelveticaNeue.ttc",
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/Library/Fonts/Arial.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+    ]
+    if bold:
+        names.insert(0, "/System/Library/Fonts/Supplemental/Arial Bold.ttf")
+    for name in names:
         try:
-            return ImageFont.truetype(p, sz)
-        except (IOError, OSError):
-            pass
+            return ImageFont.truetype(name, size)
+        except OSError:
+            continue
     return ImageFont.load_default()
 
 
-# ── Fonts (2× larger for readability) ──
-F_HERO = _font(34)
-F_TITLE = _font(26)
-F_PHASE = _font(24)
-F_STAT = _font(28)
-F_BODY = _font(20)
-F_LABEL = _font(20)
-F_SMALL = _font(17)
-F_BOX = _font(15)
-
-# ── Layout ──
-INFO_X = 470
+F_EYEBROW = font(18, bold=True)
+F_HERO = font(43, bold=True)
+F_TITLE = font(32, bold=True)
+F_SUBTITLE = font(25, bold=True)
+F_BODY = font(22)
+F_BODY_BOLD = font(22, bold=True)
+F_SMALL = font(17)
+F_METRIC = font(34, bold=True)
+F_LABEL = font(16, bold=True)
 
 
-def recolor_wafer_silver(img):
-    """Convert synthetic blue/lavender wafer to realistic silicon gray/silver."""
-    arr = np.array(img).astype(np.float32)
-    gray = 0.299 * arr[:, :, 0] + 0.587 * arr[:, :, 1] + 0.114 * arr[:, :, 2]
-    p2, p98 = np.percentile(gray, [2, 98])
-    if p98 > p2:
-        gray = (gray - p2) / (p98 - p2) * 210 + 25
-    gray = np.clip(gray, 0, 255)
-    r = np.clip(gray * 0.93, 0, 255)
-    g = np.clip(gray * 0.95, 0, 255)
-    b = np.clip(gray * 1.00, 0, 255)
-    rgb = np.stack([r, g, b], axis=2).astype(np.uint8)
-    return Image.fromarray(rgb)
+def load_json(path: Path) -> dict[str, Any]:
+    with path.open(encoding="utf-8") as handle:
+        return json.load(handle)
 
 
-def get_detections(img_path):
+def get_detections() -> list[dict[str, Any]]:
+    """Return actual Ultralytics post-NMS predictions for the displayed input."""
     from ultralytics import YOLO
-    CLS = ["scratch", "particle", "edge_chip", "void", "pattern_shift",
-           "bridge", "missing_bond", "crack", "contamination", "delamination"]
+
     model = YOLO(str(ROOT / "models" / "best.pt"))
-    results = model.predict(img_path, conf=0.15, iou=0.45, verbose=False)
-    r = results[0]
-    dets = []
-    if r.boxes is not None:
-        for box in r.boxes:
-            cid = int(box.cls[0].item())
-            conf = float(box.conf[0].item())
-            xyxy = [int(v) for v in box.xyxy[0].tolist()]
-            dets.append({"cls": CLS[cid] if cid < len(CLS) else f"c{cid}",
-                         "conf": conf, "bbox": xyxy, "suppressed": False})
-    dets.sort(key=lambda d: -d["conf"])
-    return dets
+    result = model.predict(
+        str(INPUT_IMAGE), conf=0.25, iou=0.45, imgsz=640, verbose=False
+    )[0]
+    detections: list[dict[str, Any]] = []
+    if result.boxes is None:
+        return detections
+    for box in result.boxes:
+        class_id = int(box.cls[0].item())
+        detections.append(
+            {
+                "class": str(model.names[class_id]),
+                "confidence": float(box.conf[0].item()),
+                "bbox": [float(value) for value in box.xyxy[0].tolist()],
+            }
+        )
+    return sorted(detections, key=lambda item: item["confidence"], reverse=True)
 
 
-def make_fake_candidates(real, rng, n_extra=10):
-    CLS = ["scratch", "particle", "edge_chip", "void", "crack",
-           "contamination", "delamination", "pattern_shift"]
-    cands = []
-    for d in real:
-        for _ in range(rng.integers(2, 5)):
-            b = d["bbox"]
-            sx, sy = rng.integers(-30, 31), rng.integers(-30, 31)
-            s = rng.uniform(0.75, 1.3)
-            cx = (b[0] + b[2]) / 2 + sx
-            cy = (b[1] + b[3]) / 2 + sy
-            hw, hh = (b[2] - b[0]) / 2 * s, (b[3] - b[1]) / 2 * s
-            cands.append({"cls": d["cls"],
-                          "conf": d["conf"] * rng.uniform(0.2, 0.75),
-                          "bbox": [int(cx - hw), int(cy - hh), int(cx + hw), int(cy + hh)],
-                          "suppressed": True})
-    for _ in range(n_extra):
-        cx, cy = rng.integers(60, 580), rng.integers(60, 580)
-        hw, hh = rng.integers(15, 50), rng.integers(15, 50)
-        cands.append({"cls": rng.choice(CLS), "conf": rng.uniform(0.04, 0.18),
-                      "bbox": [cx - hw, cy - hh, cx + hw, cy + hh], "suppressed": True})
-    return cands
-
-
-# ── Drawing helpers ──
-
-def draw_header(draw, step_num=0, step_total=6):
-    draw.rectangle([0, 0, W, 52], fill=(15, 20, 32))
-    draw.text((20, 8), "YOLOv8-L", fill=ACCENT, font=F_TITLE)
-    draw.text((145, 8), "Post-Silicon Defect Detection", fill=WHITE, font=F_BODY)
-    if step_num > 0:
-        txt = f"Step {step_num}/{step_total}"
-        draw.text((W - 140, 14), txt, fill=DIM, font=F_BODY)
-    draw.line([(0, 52), (W, 52)], fill=(40, 55, 75), width=1)
-
-
-def draw_explanation_box(draw, lines):
-    box_y = H - 80
-    draw.rectangle([0, box_y, W, H], fill=(15, 20, 32))
-    draw.line([(0, box_y), (W, box_y)], fill=(40, 55, 75), width=1)
-    y = box_y + 8
-    for text, color, font in lines:
-        draw.text((30, y), text, fill=color, font=font)
-        y += font.size + 6
-
-
-def draw_step_indicators(draw, current, total=6):
-    sx = W - total * 40 - 10
-    for i in range(1, total + 1):
-        x = sx + (i - 1) * 40
-        if i < current:
-            draw.ellipse([x, 58, x + 30, 88], fill=(0, 60, 40), outline=GREEN, width=2)
-            draw.text((x + 8, 64), "v", fill=GREEN, font=F_BODY)
-        elif i == current:
-            draw.ellipse([x, 58, x + 30, 88], fill=(30, 40, 55), outline=ACCENT, width=2)
-            draw.text((x + 9, 62), str(i), fill=ACCENT, font=F_BODY)
-        else:
-            draw.ellipse([x, 58, x + 30, 88], fill=(20, 25, 35), outline=(45, 55, 70), width=2)
-            draw.text((x + 9, 62), str(i), fill=(60, 70, 85), font=F_BODY)
-
-
-def draw_wafer_panel(frame, img, x, y, w, h, label=None, border=(60, 70, 90)):
+def canvas(section: str, step: int, total: int = 5) -> tuple[Image.Image, ImageDraw.ImageDraw]:
+    frame = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(frame)
-    draw.rectangle([x - 4, y - 4, x + w + 4, y + h + 4], fill=PANEL_BG)
-    frame.paste(img, (x, y))
-    draw.rectangle([x - 1, y - 1, x + w + 1, y + h + 1], outline=border, width=2)
-    if label:
-        tw = draw.textlength(label, font=F_LABEL)
-        draw.text((x + (w - tw) // 2, y + h + 6), label, fill=DIM, font=F_LABEL)
+    draw.rectangle((0, 0, W, 62), fill=SURFACE)
+    draw.text((34, 19), "WAFER VISION", fill=CYAN, font=F_EYEBROW)
+    draw.text((190, 18), section, fill=WHITE, font=F_SMALL)
+    draw.text((1075, 19), f"{step:02d} / {total:02d}", fill=MUTED, font=F_SMALL)
+    draw.line((0, 62, W, 62), fill=LINE, width=1)
+    return frame, draw
 
 
-def draw_grid(draw, px, py, size, n, progress=1.0):
-    """Draw 13×13 grid with THICK visible lines (width=3)."""
-    cs = size / n
-    alpha = min(1.0, progress * 1.5) if progress < 1.0 else 1.0
-    col = tuple(int(c * alpha) for c in GRID_COL)
-    for i in range(n + 1):
-        yy = int(py + i * cs)
-        draw.line([(px, yy), (px + size, yy)], fill=col, width=3)
-        xx = int(px + i * cs)
-        draw.line([(xx, py), (xx, py + size)], fill=col, width=3)
+def footer(draw: ImageDraw.ImageDraw, primary: str, secondary: str) -> None:
+    draw.rectangle((0, 598, W, H), fill=SURFACE)
+    draw.line((0, 598, W, 598), fill=LINE, width=1)
+    draw.text((34, 610), primary, fill=WHITE, font=F_BODY_BOLD)
+    draw.text((34, 641), secondary, fill=MUTED, font=F_SMALL)
 
 
-def draw_cell_activations(draw, px, py, size, n, dets, img_scale, progress=1.0):
-    cs = size / n
-    active = set()
-    for d in dets:
-        b = d["bbox"]
-        cx = (b[0] + b[2]) / 2 * img_scale
-        cy = (b[1] + b[3]) / 2 * img_scale
-        r, c = int(cy / cs), int(cx / cs)
-        r, c = min(max(r, 0), n - 1), min(max(c, 0), n - 1)
-        active.add((r, c))
-        for dr in [-1, 0, 1]:
-            for dc in [-1, 0, 1]:
-                nr, nc = r + dr, c + dc
-                if 0 <= nr < n and 0 <= nc < n:
-                    active.add((nr, nc))
-    show = sorted(active)[:int(len(active) * progress)]
-    for r, c in show:
-        x1, y1 = px + c * cs, py + r * cs
-        draw.rectangle([x1 + 1, y1 + 1, x1 + cs - 1, y1 + cs - 1],
-                       fill=(0, 45, 35), outline=GREEN, width=1)
+def arrow(draw: ImageDraw.ImageDraw, start: tuple[int, int], end: tuple[int, int], color: tuple[int, int, int]) -> None:
+    draw.line((start, end), fill=color, width=4)
+    draw.polygon(
+        ((end[0], end[1]), (end[0] - 13, end[1] - 8), (end[0] - 13, end[1] + 8)),
+        fill=color,
+    )
 
 
-def draw_candidate_box(draw, d, px, py, sc, ghost=False):
-    b = d["bbox"]
-    x1, y1 = int(px + b[0] * sc), int(py + b[1] * sc)
-    x2, y2 = int(px + b[2] * sc), int(py + b[3] * sc)
-    col = CLASS_COLORS.get(d["cls"], (200, 200, 200))
-    if ghost or d.get("suppressed"):
-        col = tuple(int(c * 0.35) for c in col)
-        draw.rectangle([x1, y1, x2, y2], outline=col, width=1)
-    else:
-        draw.rectangle([x1, y1, x2, y2], outline=col, width=2)
+def card(
+    draw: ImageDraw.ImageDraw,
+    box: tuple[int, int, int, int],
+    title: str,
+    body: list[str],
+    accent: tuple[int, int, int] = CYAN,
+) -> None:
+    x1, y1, x2, y2 = box
+    draw.rectangle(box, fill=SURFACE, outline=LINE, width=2)
+    draw.rectangle((x1, y1, x1 + 6, y2), fill=accent)
+    draw.text((x1 + 22, y1 + 18), title, fill=accent, font=F_SUBTITLE)
+    y = y1 + 58
+    for line in body:
+        draw.text((x1 + 22, y), line, fill=WHITE, font=F_SMALL)
+        y += 25
 
 
-def draw_final_box(draw, d, px, py, sc, progress=1.0):
-    if progress <= 0:
-        return
-    b = d["bbox"]
-    col = CLASS_COLORS.get(d["cls"], (255, 255, 255))
-    x1, y1 = int(px + b[0] * sc), int(py + b[1] * sc)
-    x2, y2 = int(px + b[2] * sc), int(py + b[3] * sc)
-    if progress < 1.0:
-        cx_b, cy_b = (x1 + x2) / 2, (y1 + y2) / 2
-        e = progress ** 0.5
-        hw, hh = (x2 - x1) / 2 * e, (y2 - y1) / 2 * e
-        x1, y1, x2, y2 = int(cx_b - hw), int(cy_b - hh), int(cx_b + hw), int(cy_b + hh)
-    draw.rectangle([x1, y1, x2, y2], outline=col, width=3)
-    cl = min(10, (x2 - x1) // 4, (y2 - y1) // 4)
-    if progress > 0.5 and cl > 2:
-        for cx, cy, dx, dy in [(x1, y1, 1, 1), (x2, y1, -1, 1),
-                                (x1, y2, 1, -1), (x2, y2, -1, -1)]:
-            draw.line([(cx, cy), (cx + cl * dx, cy)], fill=col, width=3)
-            draw.line([(cx, cy), (cx, cy + cl * dy)], fill=col, width=3)
-    if progress > 0.7:
-        label = f"{d['cls']} {d['conf']:.0%}"
-        tb = draw.textbbox((0, 0), label, font=F_BOX)
-        tw, th = tb[2] - tb[0], tb[3] - tb[1]
-        label_x = x1
-        panel_right = int(px + 640 * sc)
-        if label_x + tw + 6 > panel_right:
-            label_x = max(px, panel_right - tw - 6)
-        ly = y1 - th - 5
-        if ly < py:
-            ly = y2 + 2
-        draw.rectangle([label_x, ly - 1, label_x + tw + 6, ly + th + 3], fill=col)
-        draw.text((label_x + 3, ly), label, fill=(0, 0, 0), font=F_BOX)
+def fit_image(image: Image.Image, size: int) -> tuple[Image.Image, float]:
+    scale = size / max(image.size)
+    resized = image.resize(
+        (round(image.width * scale), round(image.height * scale)), Image.Resampling.LANCZOS
+    )
+    return resized, scale
 
 
-def draw_nms_cross(draw, d, px, py, sc):
-    b = d["bbox"]
-    x1, y1 = int(px + b[0] * sc), int(py + b[1] * sc)
-    x2, y2 = int(px + b[2] * sc), int(py + b[3] * sc)
-    col = tuple(int(c * 0.25) for c in CLASS_COLORS.get(d["cls"], (200, 200, 200)))
-    draw.rectangle([x1, y1, x2, y2], outline=col, width=1)
-    draw.line([(x1, y1), (x2, y2)], fill=RED, width=2)
-    draw.line([(x2, y1), (x1, y2)], fill=RED, width=2)
+def draw_image_panel(
+    frame: Image.Image,
+    image: Image.Image,
+    xy: tuple[int, int],
+    size: int,
+    label: str,
+    border: tuple[int, int, int] = LINE,
+) -> tuple[float, tuple[int, int]]:
+    draw = ImageDraw.Draw(frame)
+    resized, scale = fit_image(image, size)
+    x, y = xy
+    draw.rectangle((x - 5, y - 5, x + resized.width + 5, y + resized.height + 5), fill=SURFACE_2)
+    frame.paste(resized, (x, y))
+    draw.rectangle((x - 1, y - 1, x + resized.width, y + resized.height), outline=border, width=2)
+    draw.text((x, y + resized.height + 12), label, fill=MUTED, font=F_SMALL)
+    return scale, (resized.width, resized.height)
 
 
-def draw_defect_hints(draw, dets, px, py, sc):
-    """Draw subtle circles around defect locations to show they exist."""
-    for d in dets:
-        b = d["bbox"]
-        cx = int(px + (b[0] + b[2]) / 2 * sc)
-        cy = int(py + (b[1] + b[3]) / 2 * sc)
-        r = int(max(b[2] - b[0], b[3] - b[1]) * sc * 0.4) + 8
-        col = CLASS_COLORS.get(d["cls"], (255, 255, 255))
-        dim_col = tuple(int(c * 0.5) for c in col)
-        draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=dim_col, width=2)
+def draw_detection(
+    draw: ImageDraw.ImageDraw,
+    detection: dict[str, Any],
+    origin: tuple[int, int],
+    scale: float,
+) -> None:
+    x, y = origin
+    left, top, right, bottom = detection["bbox"]
+    left = round(x + left * scale)
+    top = round(y + top * scale)
+    right = round(x + right * scale)
+    bottom = round(y + bottom * scale)
+    color = CLASS_COLORS.get(detection["class"], GREEN)
+    draw.rectangle((left, top, right, bottom), outline=color, width=4)
+    label = f"{detection['class']} {detection['confidence']:.0%}"
+    text_box = draw.textbbox((0, 0), label, font=F_LABEL)
+    label_width = text_box[2] - text_box[0] + 12
+    label_height = text_box[3] - text_box[1] + 9
+    panel_right = x + round(640 * scale)
+    label_x = min(max(left, x), panel_right - label_width)
+    label_y = top - label_height
+    if label_y < y:
+        label_y = min(bottom + 3, y + round(640 * scale) - label_height)
+    draw.rectangle(
+        (label_x, label_y, label_x + label_width, label_y + label_height), fill=color
+    )
+    draw.text((label_x + 6, label_y + 3), label, fill=BG, font=F_LABEL)
 
 
-# ── Layout ──
-LX, LY = 25, 95
-RX, RY = 465, 95
-PS = 395
+def cover_scene(
+    image: Image.Image,
+    detections: list[dict[str, Any]],
+    metrics: dict[str, float],
+    trt: dict[str, float],
+) -> Image.Image:
+    frame, draw = canvas("SEMICONDUCTOR WAFER DEFECT DETECTION", 1)
+    scale, _ = draw_image_panel(
+        frame, image, (34, 90), 475, "Synthetic validation image | actual model input", CYAN
+    )
+    for detection in detections:
+        draw_detection(draw, detection, (34, 90), scale)
+
+    draw.text((555, 104), "From wafer image", fill=WHITE, font=F_HERO)
+    draw.text((555, 155), "to deployable inference", fill=CYAN, font=F_HERO)
+    draw.text((557, 222), "YOLOv8-L  |  43.64M parameters  |  10 classes", fill=MUTED, font=F_BODY)
+    draw.line((557, 268, 1158, 268), fill=LINE, width=1)
+
+    draw.text((557, 296), f"{metrics['mAP50'] * 100:.2f}%", fill=YELLOW, font=F_METRIC)
+    draw.text((557, 338), "mAP@50 on the selected YOLOv8-L run", fill=WHITE, font=F_SMALL)
+    draw.text((557, 388), f"{trt['mean_ms']:.2f} ms", fill=GREEN, font=F_METRIC)
+    draw.text((557, 430), "A100 TensorRT FP16 mean inference latency", fill=WHITE, font=F_SMALL)
+    draw.text((557, 488), f"{len(detections)} post-NMS predictions on this frame", fill=CYAN, font=F_BODY_BOLD)
+
+    footer(
+        draw,
+        "The goal: localize defect type, position, and confidence in one inference pass.",
+        "Evidence boundary: reported accuracy uses held-out procedurally generated wafers.",
+    )
+    return frame
 
 
-def generate():
-    rng = np.random.default_rng(42)
-    img_path = str(REALISTIC_DIR / "realistic_05.jpg")
-    orig = Image.open(img_path).convert("RGB")
+def importance_scene(image: Image.Image) -> Image.Image:
+    frame, draw = canvas("WHY THIS PROBLEM MATTERS", 2)
+    draw_image_panel(
+        frame, image, (34, 94), 468, "Synthetic wafer used for reproducible validation", LINE
+    )
+    draw.text((550, 102), "Inspection needs more", fill=WHITE, font=F_TITLE)
+    draw.text((550, 142), "than image classification", fill=CYAN, font=F_TITLE)
 
-    # Recolor to realistic silicon gray/silver
-    silver_orig = recolor_wafer_silver(orig)
+    card(draw, (550, 205, 835, 340), "WHAT?", ["Classify the defect", "across 10 categories"], CYAN)
+    card(draw, (855, 205, 1140, 340), "WHERE?", ["Return a bounding box", "for each prediction"], GREEN)
+    card(draw, (550, 360, 835, 495), "HOW SURE?", ["Attach a confidence", "score to each box"], YELLOW)
+    card(draw, (855, 360, 1140, 495), "HOW FAST?", ["Benchmark deployment", "backends on GPUs"], CORAL)
 
-    real_dets = [d for d in get_detections(img_path) if d["conf"] >= 0.25]
-    for d in real_dets:
-        d["suppressed"] = False
-    candidates = make_fake_candidates(real_dets, rng)
-    all_dets = real_dets + candidates
-    n_real, n_cands = len(real_dets), len(all_dets)
-    suppressed = [d for d in all_dets if d.get("suppressed")]
-    n_supp = len(suppressed)
+    footer(
+        draw,
+        "Ten-class taxonomy spans scratches, particles, edge chips, cracks, voids, and process defects.",
+        "Real fab deployment still requires qualification across tools, lots, recipes, and process corners.",
+    )
+    return frame
 
-    sc = PS / max(silver_orig.size)
-    dw, dh = int(silver_orig.size[0] * sc), int(silver_orig.size[1] * sc)
-    wafer_sm = silver_orig.resize((dw, dh), Image.LANCZOS)
 
-    # Larger wafer for opening/closing (fills left side)
-    OPS = 440
-    osc = OPS / max(silver_orig.size)
-    odw, odh = int(silver_orig.size[0] * osc), int(silver_orig.size[1] * osc)
-    wafer_lg = silver_orig.resize((odw, odh), Image.LANCZOS)
+def architecture_scene(progress: float) -> Image.Image:
+    frame, draw = canvas("YOLOv8-L INFERENCE PATH", 3)
+    draw.text((34, 90), "Multi-scale, anchor-free detection", fill=WHITE, font=F_TITLE)
+    draw.text((34, 132), "Architecture schematic | checkpoint strides verified at 8, 16, and 32", fill=MUTED, font=F_BODY)
 
-    print(f"  Wafer: realistic_05.jpg (silver) — {n_real} real + {len(candidates)} candidates")
+    stages = [
+        ((34, 215, 230, 370), "640 x 640", ["RGB input", "normalized tensor"], CYAN),
+        ((270, 215, 466, 370), "C2f backbone", ["extracts spatial", "feature hierarchy"], GREEN),
+        ((506, 215, 702, 370), "PAN-FPN neck", ["fuses detail and", "semantic context"], YELLOW),
+        ((742, 175, 940, 410), "Feature pyramid", ["P3  80 x 80  s8", "P4  40 x 40  s16", "P5  20 x 20  s32"], CYAN),
+        ((980, 215, 1166, 370), "Split head", ["box regression", "class scores"], CORAL),
+    ]
+    visible = max(1, min(len(stages), int(progress * len(stages)) + 1))
+    for index, (box, title, body, accent) in enumerate(stages[:visible]):
+        card(draw, box, title, body, accent)
+        if index > 0:
+            previous = stages[index - 1][0]
+            arrow(draw, (previous[2] + 8, 292), (box[0] - 10, 292), accent)
 
-    frames = []
+    draw.rectangle((244, 455, 956, 540), fill=SURFACE, outline=LINE, width=2)
+    draw.text((275, 473), "Small, medium, and large receptive fields are evaluated together", fill=WHITE, font=F_BODY_BOLD)
+    draw.text((334, 510), "The model does not use a single 13 x 13 prediction grid", fill=YELLOW, font=F_SMALL)
 
-    def base(step):
-        f = Image.new("RGB", (W, H), BG)
-        d = ImageDraw.Draw(f)
-        draw_header(d, step, 6)
-        if step > 0:
-            draw_step_indicators(d, step)
-        return f, d
+    footer(
+        draw,
+        "The three detection scales preserve small-defect detail while adding wider context.",
+        "Schematic explains tensor flow; it is not a visualization of hidden activations.",
+    )
+    return frame
 
-    # ═══════════════════════════════════════════
-    # OPENING — Annotated wafer + title (2s = 6 frames)
-    # ═══════════════════════════════════════════
-    for _ in range(6):
-        f = Image.new("RGB", (W, H), BG)
-        d = ImageDraw.Draw(f)
-        draw_header(d)
 
-        # Keep frame one presentation-ready because social previews use it as the thumbnail.
-        draw_wafer_panel(f, wafer_lg, LX, 90, odw, odh, border=ACCENT)
+def decision_scene(
+    image: Image.Image, detections: list[dict[str, Any]], visible_count: int
+) -> Image.Image:
+    frame, draw = canvas("FROM MODEL OUTPUT TO INSPECTION RESULT", 4)
+    scale, _ = draw_image_panel(
+        frame, image, (34, 91), 475, "Actual post-NMS predictions | conf 0.25 | IoU 0.45", GREEN
+    )
+    for detection in detections[:visible_count]:
+        draw_detection(draw, detection, (34, 91), scale)
 
-        for det in real_dets:
-            draw_final_box(d, det, LX, 90, osc, 1.0)
+    draw.text((550, 96), "Decision path", fill=WHITE, font=F_TITLE)
+    steps = [
+        ("01", "Decode", "box coordinates and class scores"),
+        ("02", "Filter", "confidence below 0.25"),
+        ("03", "Suppress", "overlapping boxes at IoU 0.45"),
+        ("04", "Return", "class, confidence, and image-space box"),
+    ]
+    y = 160
+    for number, title, detail in steps:
+        draw.rectangle((550, y, 608, y + 52), fill=SURFACE_2, outline=LINE, width=1)
+        draw.text((565, y + 13), number, fill=CYAN, font=F_SMALL)
+        draw.text((630, y + 2), title, fill=WHITE, font=F_BODY_BOLD)
+        draw.text((630, y + 30), detail, fill=MUTED, font=F_SMALL)
+        y += 85
 
-        # Right-side title text
-        tx = INFO_X
-        ty = 110
-        d.text((tx, ty), "Post-Silicon Wafer", fill=ACCENT, font=F_HERO)
-        d.text((tx, ty + 42), "Defect Detection", fill=WHITE, font=F_HERO)
-        ty += 100
-        d.text((tx, ty), "YOLOv8-L  |  44M Parameters", fill=DIM, font=F_BODY)
-        ty += 35
-        d.text((tx, ty), "mAP@50: 99.22%", fill=YELLOW, font=F_STAT)
-        ty += 40
-        d.text((tx, ty), "10 Semiconductor Defect Classes", fill=DIM, font=F_BODY)
-        ty += 50
-        d.line([(tx, ty), (tx + 350, ty)], fill=(40, 55, 75), width=1)
-        ty += 15
-        d.text((tx, ty), '"You Only Look Once"', fill=ACCENT, font=F_BODY)
-        ty += 30
-        d.text((tx, ty), "Full frame  |  One forward pass", fill=DIM, font=F_SMALL)
-        ty += 22
-        d.text((tx, ty), "All defects localized together", fill=DIM, font=F_SMALL)
+    y = 510
+    summary = " | ".join(
+        f"{item['class']} {item['confidence']:.0%}" for item in detections
+    )
+    draw.text((550, y), f"Observed predictions: {summary}", fill=GREEN, font=F_SMALL)
 
-        frames.append(f)
+    footer(
+        draw,
+        f"This frame contains {len(detections)} predictions produced by the trained checkpoint.",
+        "Only final Ultralytics outputs are shown; no synthetic candidate boxes are presented as inference.",
+    )
+    return frame
 
-    # ═══════════════════════════════════════════
-    # STEP 1: INPUT IMAGE (3s = 9 frames)
-    # ═══════════════════════════════════════════
-    for i in range(9):
-        f, d = base(1)
-        d.text((LX, LY - 30), "Step 1: Input Image", fill=ACCENT, font=F_PHASE)
 
-        # Wafer fading in
-        alpha = min(1.0, i / 5)
-        if alpha < 1.0:
-            dark = Image.new("RGB", (dw, dh), BG)
-            draw_wafer_panel(f, Image.blend(dark, wafer_sm, alpha),
-                             LX, LY, dw, dh, "Input: 640×640 wafer image", ACCENT)
-        else:
-            draw_wafer_panel(f, wafer_sm, LX, LY, dw, dh,
-                             "Input: 640×640 wafer image", ACCENT)
+def results_scene(
+    image: Image.Image,
+    detections: list[dict[str, Any]],
+    metrics: dict[str, float],
+    trt: dict[str, float],
+    t4: dict[str, float],
+) -> Image.Image:
+    frame, draw = canvas("MEASURED RESULTS AND DEPLOYMENT", 5)
+    scale, _ = draw_image_panel(
+        frame, image, (34, 91), 475, "Actual checkpoint predictions on a synthetic validation image", GREEN
+    )
+    for detection in detections:
+        draw_detection(draw, detection, (34, 91), scale)
 
-        # Arrow to CNN
-        if i >= 3:
-            ap = min(1.0, (i - 3) / 4)
-            ax1 = LX + dw + 12
-            ax2 = int(ax1 + (RX - ax1 - 10) * ap)
-            ay = LY + dh // 2
-            d.line([(ax1, ay), (ax2, ay)], fill=ACCENT, width=3)
-            if ap > 0.5:
-                d.polygon([(ax2, ay - 8), (ax2 + 14, ay), (ax2, ay + 8)], fill=ACCENT)
-                d.text((ax1 + 8, ay - 25), "CNN backbone", fill=WHITE, font=F_LABEL)
+    draw.text((550, 94), "Measured evidence", fill=WHITE, font=F_TITLE)
+    draw.text((550, 136), "Values loaded from committed JSON artifacts", fill=MUTED, font=F_SMALL)
 
-        # Defect hints after full reveal
-        if i >= 5:
-            d2 = ImageDraw.Draw(f)
-            draw_defect_hints(d2, real_dets, LX, LY, sc)
+    metric_cards = [
+        ((550, 180, 830, 295), f"{metrics['mAP50'] * 100:.2f}%", "mAP@50", YELLOW),
+        ((850, 180, 1130, 295), f"{metrics['mAP50_95'] * 100:.2f}%", "mAP@50:95", CYAN),
+        ((550, 315, 830, 430), f"{trt['mean_ms']:.2f} ms", "A100 TRT FP16 mean", GREEN),
+        ((850, 315, 1130, 430), f"{trt['fps']:.1f} FPS", "A100 TRT FP16", GREEN),
+    ]
+    for box, value, label, accent in metric_cards:
+        x1, y1, x2, y2 = box
+        draw.rectangle(box, fill=SURFACE, outline=LINE, width=2)
+        draw.text((x1 + 20, y1 + 18), value, fill=accent, font=F_METRIC)
+        draw.text((x1 + 20, y2 - 32), label, fill=MUTED, font=F_SMALL)
 
-        draw_explanation_box(d, [
-            ("Feed the ENTIRE wafer image into the neural network", WHITE, F_BODY),
-            ("No scanning, no sliding window — one forward pass", YELLOW, F_SMALL),
-        ])
-        frames.append(f)
+    draw.text(
+        (550, 464),
+        f"T4 PyTorch FP16: {t4['mean_ms']:.2f} ms mean | {t4['fps']:.1f} FPS",
+        fill=WHITE,
+        font=F_BODY_BOLD,
+    )
+    draw.text((550, 506), "FastAPI -> Triton ONNX v1 -> Prometheus/Grafana", fill=CYAN, font=F_BODY)
+    draw.text((550, 542), "TensorRT benchmarked separately because engine files are environment-bound", fill=MUTED, font=F_SMALL)
 
-    # ═══════════════════════════════════════════
-    # STEP 2: FEATURE GRID (3s = 9 frames)
-    # ═══════════════════════════════════════════
-    for i in range(9):
-        f, d = base(2)
-        d.text((LX, LY - 30), "Step 2: Feature Grid (13×13)", fill=ACCENT, font=F_PHASE)
-        draw_wafer_panel(f, wafer_sm, LX, LY, dw, dh, "Original", (60, 70, 90))
+    footer(
+        draw,
+        "Strong synthetic-data results justify the system design, not claims of fab readiness.",
+        "Next evidence milestone: qualified real-wafer data, calibration, and cross-tool drift evaluation.",
+    )
+    return frame
 
-        # Right panel: wafer + thick grid
-        f.paste(wafer_sm, (RX, RY))
-        d2 = ImageDraw.Draw(f)
-        gp = min(1.0, i / 8)
-        draw_grid(d2, RX, RY, dw, GRID_N, gp)
-        d2.rectangle([RX - 1, RY - 1, RX + dw + 1, RY + dh + 1], outline=ACCENT, width=2)
-        d2.text((RX + dw // 2 - 100, RY + dh + 8),
-                f"Feature map: {GRID_N}×{GRID_N} = {GRID_N**2} cells", fill=ACCENT, font=F_LABEL)
 
-        draw_explanation_box(d, [
-            (f"CNN outputs a {GRID_N}×{GRID_N} feature grid over the image", WHITE, F_BODY),
-            ("Each cell detects objects whose CENTER falls within it", ACCENT, F_SMALL),
-        ])
-        frames.append(f)
+def generate() -> None:
+    image = Image.open(INPUT_IMAGE).convert("RGB")
+    if image.size != (640, 640):
+        raise ValueError(f"Expected a 640 x 640 validation image, received {image.size}")
 
-    # ═══════════════════════════════════════════
-    # STEP 3: SIMULTANEOUS PREDICTION (3s = 9 frames)
-    # ═══════════════════════════════════════════
-    for i in range(9):
-        f, d = base(3)
-        d.text((LX, LY - 30), "Step 3: Simultaneous Prediction", fill=GREEN, font=F_PHASE)
-        draw_wafer_panel(f, wafer_sm, LX, LY, dw, dh, "Original", (60, 70, 90))
+    summary = load_json(RESULTS_JSON)
+    trt_summary = load_json(TRT_JSON)
+    t4_summary = load_json(T4_JSON)
+    metrics = summary["model_comparison"]["YOLOv8-L"]
+    trt = trt_summary["trt_fp16"]
+    t4 = t4_summary["direct_inference"]
+    detections = get_detections()
+    if not detections:
+        raise RuntimeError("The selected validation image produced no detections")
 
-        f.paste(wafer_sm, (RX, RY))
-        d2 = ImageDraw.Draw(f)
-        draw_grid(d2, RX, RY, dw, GRID_N)
-        ap = min(1.0, i / 8)
-        draw_cell_activations(d2, RX, RY, dw, GRID_N, real_dets, sc, ap)
-        d2.rectangle([RX - 1, RY - 1, RX + dw + 1, RY + dh + 1], outline=GREEN, width=2)
-        na = int(len(real_dets) * 9 * ap)
-        d2.text((RX + dw // 2 - 80, RY + dh + 8),
-                f"Active cells: {na} (defect regions)", fill=GREEN, font=F_LABEL)
+    frames: list[Image.Image] = []
+    frames.extend([cover_scene(image, detections, metrics, trt)] * 12)
+    frames.extend([importance_scene(image)] * 12)
+    for index in range(20):
+        frames.append(architecture_scene((index + 1) / 20))
+    for index in range(16):
+        visible = min(len(detections), max(1, (index * len(detections) // 12) + 1))
+        frames.append(decision_scene(image, detections, visible))
+    frames.extend([results_scene(image, detections, metrics, trt, t4)] * 20)
 
-        draw_explanation_box(d, [
-            ("All grid cells predict SIMULTANEOUSLY — not one by one!", WHITE, F_BODY),
-            ("Green cells: defect center detected → box + class + confidence", GREEN, F_SMALL),
-        ])
-        frames.append(f)
-
-    # ═══════════════════════════════════════════
-    # STEP 4: RAW CANDIDATE BOXES (3s = 9 frames)
-    # ═══════════════════════════════════════════
-    for i in range(9):
-        f, d = base(4)
-        d.text((LX, LY - 30), "Step 4: Raw Candidate Boxes", fill=ORANGE, font=F_PHASE)
-        draw_wafer_panel(f, wafer_sm, LX, LY, dw, dh, "Original", (60, 70, 90))
-
-        f.paste(wafer_sm, (RX, RY))
-        d2 = ImageDraw.Draw(f)
-        ns = int(n_cands * min(1.0, i / 8))
-        for det in all_dets[:ns]:
-            draw_candidate_box(d2, det, RX, RY, sc, det.get("suppressed", False))
-        d2.rectangle([RX - 1, RY - 1, RX + dw + 1, RY + dh + 1], outline=ORANGE, width=2)
-        d2.text((RX + dw // 2 - 90, RY + dh + 8),
-                f"Candidates: {ns} boxes (overlapping)", fill=ORANGE, font=F_LABEL)
-
-        max_conf = max((det["conf"] for det in real_dets), default=0.9)
-        draw_explanation_box(d, [
-            (f"{n_cands} raw predictions — mostly overlapping duplicates", WHITE, F_BODY),
-            (f"Confidence: 4% to {max_conf:.0%} — duplicates need filtering next", ORANGE, F_SMALL),
-        ])
-        frames.append(f)
-
-    # ═══════════════════════════════════════════
-    # STEP 5: NON-MAX SUPPRESSION (4s = 12 frames)
-    # ═══════════════════════════════════════════
-    for i in range(12):
-        f, d = base(5)
-        d.text((LX, LY - 30), "Step 5: Non-Max Suppression", fill=RED, font=F_PHASE)
-        draw_wafer_panel(f, wafer_sm, LX, LY, dw, dh, "Original", (60, 70, 90))
-
-        f.paste(wafer_sm, (RX, RY))
-        d2 = ImageDraw.Draw(f)
-        nr = int(n_supp * min(1.0, i / 10))
-        for det in real_dets:
-            draw_candidate_box(d2, det, RX, RY, sc)
-        for j, det in enumerate(suppressed):
-            if j < nr:
-                draw_nms_cross(d2, det, RX, RY, sc)
-            else:
-                draw_candidate_box(d2, det, RX, RY, sc, ghost=True)
-        d2.rectangle([RX - 1, RY - 1, RX + dw + 1, RY + dh + 1], outline=RED, width=2)
-        d2.text((RX + dw // 2 - 80, RY + dh + 8),
-                f"Removed: {nr}/{n_supp} duplicates", fill=RED, font=F_LABEL)
-
-        draw_explanation_box(d, [
-            ("NMS removes duplicate and low-confidence predictions", WHITE, F_BODY),
-            (f"Overlap > 45% IoU → weaker box discarded. {n_supp} → {n_real} final", RED, F_SMALL),
-        ])
-        frames.append(f)
-
-    # ═══════════════════════════════════════════
-    # STEP 6: FINAL DETECTIONS (3 frames/box + 9 hold)
-    # ═══════════════════════════════════════════
-    for di in range(n_real):
-        for i in range(3):
-            f, d = base(6)
-            d.text((LX, LY - 30),
-                   f"Step 6: Detection {di + 1}/{n_real}", fill=GREEN, font=F_PHASE)
-            draw_wafer_panel(f, wafer_sm, LX, LY, dw, dh, "Original", (60, 70, 90))
-            f.paste(wafer_sm, (RX, RY))
-            d2 = ImageDraw.Draw(f)
-            for prev in range(di):
-                draw_final_box(d2, real_dets[prev], RX, RY, sc, 1.0)
-            draw_final_box(d2, real_dets[di], RX, RY, sc, (i + 1) / 3)
-            d2.rectangle([RX - 1, RY - 1, RX + dw + 1, RY + dh + 1], outline=GREEN, width=2)
-            det = real_dets[di]
-            d2.text((RX + dw // 2 - 80, RY + dh + 8),
-                    f"Found: {det['cls']} ({det['conf']:.0%})", fill=GREEN, font=F_LABEL)
-
-            draw_explanation_box(d, [
-                (f"Confirmed: {det['cls']} at {det['conf']:.0%} confidence", WHITE, F_BODY),
-                (f"Detection {di + 1} of {n_real} defects on this wafer", GREEN, F_SMALL),
-            ])
-            frames.append(f)
-
-    # Hold final detections
-    for _ in range(9):
-        f, d = base(6)
-        d.text((LX, LY - 30), "All Defects Detected", fill=GREEN, font=F_PHASE)
-        draw_wafer_panel(f, wafer_sm, LX, LY, dw, dh, "Original", (60, 70, 90))
-        f.paste(wafer_sm, (RX, RY))
-        d2 = ImageDraw.Draw(f)
-        for det in real_dets:
-            draw_final_box(d2, det, RX, RY, sc, 1.0)
-        d2.rectangle([RX - 1, RY - 1, RX + dw + 1, RY + dh + 1], outline=GREEN, width=2)
-        classes = sorted({d["cls"] for d in real_dets})
-        d2.text((RX + 10, RY + dh + 8),
-                f"{n_real} defects: {', '.join(classes)}", fill=GREEN, font=F_LABEL)
-
-        draw_explanation_box(d, [
-            (f"Complete: {n_real} defects detected in ONE forward pass", GREEN, F_BODY),
-            ("T4 FP16: 16.1ms / 62 FPS  |  A100 TRT: 4.5ms / 221 FPS", YELLOW, F_SMALL),
-        ])
-        frames.append(f)
-
-    # ═══════════════════════════════════════════
-    # CLOSING — Annotated wafer + benchmark numbers (4s = 12 frames)
-    # ═══════════════════════════════════════════
-    for _ in range(12):
-        f = Image.new("RGB", (W, H), BG)
-        d = ImageDraw.Draw(f)
-        draw_header(d)
-
-        # Left: large annotated wafer with all detections
-        draw_wafer_panel(f, wafer_lg, LX, 90, odw, odh, border=GREEN)
-        d2 = ImageDraw.Draw(f)
-        for det in real_dets:
-            draw_final_box(d2, det, LX, 90, osc, 1.0)
-
-        # Right: BIG benchmark numbers
-        tx = INFO_X
-        ty = 100
-        d.text((tx, ty), f"{n_real} Defects Detected", fill=GREEN, font=F_HERO)
-        ty += 48
-        classes = sorted({det["cls"] for det in real_dets})
-        d.text((tx, ty), f"Classes: {', '.join(classes)}", fill=WHITE, font=F_BODY)
-
-        ty += 50
-        d.line([(tx, ty), (tx + 350, ty)], fill=(40, 55, 75), width=1)
-        ty += 20
-
-        # GPU Performance (large, prominent)
-        d.text((tx, ty), "GPU Performance", fill=ACCENT, font=F_PHASE)
-        ty += 38
-        d.text((tx, ty), "T4 FP16", fill=DIM, font=F_BODY)
-        d.text((tx + 140, ty), "16.1ms  |  62 FPS", fill=ACCENT, font=F_STAT)
-        ty += 40
-        d.text((tx, ty), "A100 TRT", fill=DIM, font=F_BODY)
-        d.text((tx + 140, ty), "4.5ms  |  221 FPS", fill=YELLOW, font=F_STAT)
-
-        ty += 55
-        d.line([(tx, ty), (tx + 350, ty)], fill=(40, 55, 75), width=1)
-        ty += 15
-        d.text((tx, ty), "mAP@50: 99.22%  |  10 classes", fill=WHITE, font=F_BODY)
-        ty += 30
-        d.text((tx, ty), "YOLOv8-L  |  44M parameters", fill=DIM, font=F_SMALL)
-        ty += 25
-        d.text((tx, ty), "github.com/Rajendar-Muddasani-2/", fill=DIM, font=F_SMALL)
-        ty += 22
-        d.text((tx, ty), "yolo-object-detection", fill=ACCENT, font=F_SMALL)
-
-        frames.append(f)
-
-    # ── Encode ──
-    print(f"\nEncoding: {len(frames)} frames @ {FPS} FPS = {len(frames)/FPS:.1f}s")
-    q = [fr.quantize(colors=128, method=Image.Quantize.MEDIANCUT,
-                      dither=Image.Dither.FLOYDSTEINBERG) for fr in frames]
-    q[0].save(str(OUTPUT_GIF), save_all=True, append_images=q[1:],
-              duration=FRAME_MS, loop=0, optimize=True)
-    sz = OUTPUT_GIF.stat().st_size / 1e6
-    print(f"  Saved: {OUTPUT_GIF}")
-    print(f"  Size : {sz:.1f} MB  |  {len(frames)} frames  |  {len(frames)/FPS:.1f}s @ {FPS} FPS")
+    quantized = [
+        frame.quantize(colors=160, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.FLOYDSTEINBERG)
+        for frame in frames
+    ]
+    quantized[0].save(
+        OUTPUT_GIF,
+        save_all=True,
+        append_images=quantized[1:],
+        duration=FRAME_MS,
+        loop=0,
+        optimize=True,
+    )
+    size_mb = OUTPUT_GIF.stat().st_size / 1_000_000
+    print(f"Input: {INPUT_IMAGE.relative_to(ROOT)}")
+    print(f"Actual post-NMS predictions: {len(detections)}")
+    print(f"Output: {OUTPUT_GIF.relative_to(ROOT)}")
+    print(f"Frames: {len(frames)} | Duration: {len(frames) / FPS:.1f}s | Size: {size_mb:.1f} MB")
 
 
 if __name__ == "__main__":
