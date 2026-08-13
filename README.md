@@ -1,11 +1,11 @@
-# YOLOv8 Semiconductor Wafer Defect Detection
+# GPU-Accelerated Computer Vision for Semiconductor Wafer Defect Detection
 
-[![CI](https://github.com/Rajendar-Muddasani-2/yolo-object-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/Rajendar-Muddasani-2/yolo-object-detection/actions/workflows/ci.yml)
+[![CI](https://github.com/Rajendar-Muddasani-2/cv-yolo-wafer-defect-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/Rajendar-Muddasani-2/cv-yolo-wafer-defect-detection/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![YOLOv8](https://img.shields.io/badge/YOLOv8-Large-00FFFF)](https://docs.ultralytics.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-GPU-trained object detection for semiconductor wafer inspection, with reproducible data generation, FastAPI serving, NVIDIA Triton deployment, a React inspection UI, and Prometheus/Grafana observability.
+An end-to-end **YOLOv8-L computer vision system** for semiconductor wafer inspection, with GPU training, TensorRT optimization, NVIDIA Triton serving, a React inspection UI, and Prometheus/Grafana observability.
 
 <p align="center">
   <img src="outputs/yolo_wafer_detection.gif" alt="YOLOv8-L wafer defect detection pipeline" width="900" />
@@ -104,8 +104,8 @@ The API attempts Triton first and falls back to the local Ultralytics model when
 ### Local Python environment
 
 ```bash
-git clone https://github.com/Rajendar-Muddasani-2/yolo-object-detection.git
-cd yolo-object-detection
+git clone https://github.com/Rajendar-Muddasani-2/cv-yolo-wafer-defect-detection.git
+cd cv-yolo-wafer-defect-detection
 git lfs install
 git lfs pull
 

@@ -169,7 +169,7 @@ def canvas(section: str, step: int, total: int = 5) -> tuple[Image.Image, ImageD
     draw = ImageDraw.Draw(frame)
     draw_circuit_background(draw)
     draw.rectangle((0, 0, W, 62), fill=SURFACE)
-    draw.text((34, 19), "WAFER VISION", fill=GREEN, font=F_EYEBROW)
+    draw.text((34, 19), "YOLO WAFER CV", fill=GREEN, font=F_EYEBROW)
     draw.text((190, 18), section, fill=WHITE, font=F_SMALL)
     draw.text((1075, 19), f"{step:02d} / {total:02d}", fill=MUTED, font=F_SMALL)
     draw.line((0, 62, W, 62), fill=LINE, width=1)
@@ -269,7 +269,7 @@ def cover_scene(
     metrics: dict[str, float],
     trt: dict[str, float],
 ) -> Image.Image:
-    frame, draw = canvas("SEMICONDUCTOR WAFER DEFECT DETECTION", 1)
+    frame, draw = canvas("GPU-ACCELERATED SEMICONDUCTOR INSPECTION", 1)
     scale, _ = draw_image_panel(
         frame,
         styled_image,
