@@ -129,6 +129,10 @@ dmypy.json
 *.swo
 *~
 
+# Frontend dependencies and builds
+node_modules/
+frontend/dist/
+
 # OS
 .DS_Store
 Thumbs.db

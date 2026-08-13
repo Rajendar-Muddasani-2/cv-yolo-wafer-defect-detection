@@ -5,7 +5,6 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import numpy as np
 import pytest
 from PIL import Image
 
@@ -93,7 +92,7 @@ class TestDataGenerator:
     def test_generate_small_dataset(self, tmp_path):
         from src.data_generator import generate_dataset
 
-        stats = generate_dataset(
+        generate_dataset(
             output_dir=str(tmp_path / "data"),
             n_images=10,
             max_defects_per_image=3,

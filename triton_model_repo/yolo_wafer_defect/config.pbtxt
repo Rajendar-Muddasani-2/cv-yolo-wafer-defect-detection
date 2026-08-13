@@ -30,13 +30,8 @@ instance_group [
   }
 ]
 
-# Model versioning policy:
-#   Version 1: ONNX (default, production)
-#   Version 2: TensorRT FP16 (after running tensorrt_benchmark.ipynb)
-#
-# To enable A/B testing between versions, set:
-#   version_policy { specific { versions: [1, 2] } }
-# Then route traffic via Triton's model control API
+# Version 1 contains the portable ONNX model used by Docker Compose.
+# TensorRT plans are environment-specific and are benchmarked separately.
 version_policy {
-  latest { num_versions: 1 }
+  specific { versions: [1] }
 }

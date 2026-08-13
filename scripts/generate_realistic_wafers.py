@@ -11,7 +11,7 @@ These are synthetic but look much more realistic than the training data:
 
 import math
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter
 from pathlib import Path
 
 

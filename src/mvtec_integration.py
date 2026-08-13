@@ -14,10 +14,8 @@ Reference: https://www.mvtec.com/company/research/datasets/mvtec-ad
 import json
 import logging
 import shutil
-import tarfile
 from pathlib import Path
 from typing import Dict, List, Tuple
-from urllib.request import urlretrieve
 
 import numpy as np
 from PIL import Image

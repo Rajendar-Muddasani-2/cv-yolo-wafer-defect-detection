@@ -7,20 +7,21 @@ Includes JWT authentication, API key support, rate limiting, and structured logg
 """
 
 import io
+import importlib
 import json
 import logging
 import os
 import secrets
 import time
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, AsyncIterator, List, Optional, Protocol
 
 import numpy as np
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from PIL import Image
 from pydantic import BaseModel
 
@@ -42,6 +43,7 @@ JWT_SECRET = os.getenv("JWT_SECRET", "dev-jwt-secret-change-in-prod")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
 AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() == "true"
+TRITON_URL = os.getenv("TRITON_URL", "localhost:8000")
 
 # ---------------------------------------------------------------------------
 # Rate limiting config
@@ -161,10 +163,17 @@ async def _authenticate(
         detail="Authentication required. Provide X-API-Key header or Bearer token.",
     )
 
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    await startup()
+    yield
+
+
 app = FastAPI(
     title="Wafer Defect Detection API",
     description="YOLOv8-Large wafer defect detection with Triton Inference Server backend",
     version="2.0.0",
+    lifespan=lifespan,
 )
 
 # CORS — restrict in production via ALLOWED_ORIGINS env var
@@ -251,15 +260,23 @@ class HealthResponse(BaseModel):
     backend: str  # "triton" or "ultralytics"
 
 
+class TritonClient(Protocol):
+    def is_server_live(self) -> bool: ...
+
+    def infer(
+        self, model_name: str, inputs: List[Any], *, outputs: List[Any]
+    ) -> Any: ...
+
+
 def _try_triton_connect():
     """Attempt to connect to Triton Inference Server."""
     global _triton_client
     try:
-        import tritonclient.http as httpclient
-        client = httpclient.InferenceServerClient(url="localhost:8000")
+        httpclient = importlib.import_module("tritonclient.http")
+        client = httpclient.InferenceServerClient(url=TRITON_URL)
         if client.is_server_live():
             _triton_client = client
-            logger.info("Connected to Triton Inference Server")
+            logger.info("Connected to Triton Inference Server at %s", TRITON_URL)
             return True
     except Exception:
         pass
@@ -289,7 +306,6 @@ def _load_ultralytics_model():
         return False
 
 
-@app.on_event("startup")
 async def startup():
     """Try Triton first, fall back to Ultralytics."""
     _metrics["startup_time"] = datetime.now(timezone.utc).isoformat()
@@ -332,7 +348,10 @@ def _predict_ultralytics(img: Image.Image, conf: float = 0.25) -> List[Detection
 
 def _predict_triton(img: Image.Image, conf: float = 0.25) -> List[DetectionResult]:
     """Run inference via Triton Inference Server."""
-    import tritonclient.http as httpclient
+    httpclient = importlib.import_module("tritonclient.http")
+    client: Optional[TritonClient] = _triton_client
+    if client is None:
+        raise HTTPException(status_code=503, detail="Triton client is not connected")
 
     # Preprocess
     img_resized = img.resize((640, 640))
@@ -344,7 +363,7 @@ def _predict_triton(img: Image.Image, conf: float = 0.25) -> List[DetectionResul
     inputs[0].set_data_from_numpy(img_arr)
 
     outputs = [httpclient.InferRequestedOutput("output0")]
-    result = _triton_client.infer("yolo_wafer_defect", inputs, outputs=outputs)
+    result = client.infer("yolo_wafer_defect", inputs, outputs=outputs)
     output = result.as_numpy("output0")
 
     # Parse YOLO output (post-processing)

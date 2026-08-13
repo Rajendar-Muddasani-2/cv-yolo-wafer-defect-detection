@@ -10,7 +10,7 @@ Post-silicon wafer defect detection walkthrough using YOLOv8-L.
 - 2× larger text for numbers and right-side content
 - Real benchmark numbers: T4 FP16 + A100 TensorRT
 
-Target: ~45s @ 3 FPS, <8MB, LinkedIn-optimized (900×620)
+Target: ~30s @ 3 FPS, <8MB, LinkedIn-optimized (900×620)
 """
 
 from pathlib import Path
@@ -135,8 +135,8 @@ def make_fake_candidates(real, rng, n_extra=10):
 
 def draw_header(draw, step_num=0, step_total=6):
     draw.rectangle([0, 0, W, 52], fill=(15, 20, 32))
-    draw.text((20, 8), "YOLO", fill=ACCENT, font=F_TITLE)
-    draw.text((90, 8), "Post-Silicon Defect Detection", fill=WHITE, font=F_BODY)
+    draw.text((20, 8), "YOLOv8-L", fill=ACCENT, font=F_TITLE)
+    draw.text((145, 8), "Post-Silicon Defect Detection", fill=WHITE, font=F_BODY)
     if step_num > 0:
         txt = f"Step {step_num}/{step_total}"
         draw.text((W - 140, 14), txt, fill=DIM, font=F_BODY)
@@ -247,11 +247,15 @@ def draw_final_box(draw, d, px, py, sc, progress=1.0):
         label = f"{d['cls']} {d['conf']:.0%}"
         tb = draw.textbbox((0, 0), label, font=F_BOX)
         tw, th = tb[2] - tb[0], tb[3] - tb[1]
+        label_x = x1
+        panel_right = int(px + 640 * sc)
+        if label_x + tw + 6 > panel_right:
+            label_x = max(px, panel_right - tw - 6)
         ly = y1 - th - 5
         if ly < py:
             ly = y2 + 2
-        draw.rectangle([x1, ly - 1, x1 + tw + 6, ly + th + 3], fill=col)
-        draw.text((x1 + 3, ly), label, fill=(0, 0, 0), font=F_BOX)
+        draw.rectangle([label_x, ly - 1, label_x + tw + 6, ly + th + 3], fill=col)
+        draw.text((label_x + 3, ly), label, fill=(0, 0, 0), font=F_BOX)
 
 
 def draw_nms_cross(draw, d, px, py, sc):
@@ -322,26 +326,18 @@ def generate():
         return f, d
 
     # ═══════════════════════════════════════════
-    # OPENING — Wafer image + title (4s = 12 frames)
+    # OPENING — Annotated wafer + title (2s = 6 frames)
     # ═══════════════════════════════════════════
-    for i in range(12):
+    for _ in range(6):
         f = Image.new("RGB", (W, H), BG)
         d = ImageDraw.Draw(f)
         draw_header(d)
 
-        # Large wafer on left
-        alpha = min(1.0, i / 4)
-        if alpha < 1.0:
-            dark = Image.new("RGB", (odw, odh), BG)
-            panel = Image.blend(dark, wafer_lg, alpha)
-        else:
-            panel = wafer_lg
-        draw_wafer_panel(f, panel, LX, 90, odw, odh, border=ACCENT)
+        # Keep frame one presentation-ready because social previews use it as the thumbnail.
+        draw_wafer_panel(f, wafer_lg, LX, 90, odw, odh, border=ACCENT)
 
-        # Defect hints on wafer (after fade-in)
-        if i >= 6:
-            d2 = ImageDraw.Draw(f)
-            draw_defect_hints(d2, real_dets, LX, 90, osc)
+        for det in real_dets:
+            draw_final_box(d, det, LX, 90, osc, 1.0)
 
         # Right-side title text
         tx = INFO_X
@@ -359,16 +355,16 @@ def generate():
         ty += 15
         d.text((tx, ty), '"You Only Look Once"', fill=ACCENT, font=F_BODY)
         ty += 30
-        d.text((tx, ty), "Full image >> Single forward pass", fill=DIM, font=F_SMALL)
+        d.text((tx, ty), "Full frame  |  One forward pass", fill=DIM, font=F_SMALL)
         ty += 22
-        d.text((tx, ty), ">> All defects detected simultaneously", fill=DIM, font=F_SMALL)
+        d.text((tx, ty), "All defects localized together", fill=DIM, font=F_SMALL)
 
         frames.append(f)
 
     # ═══════════════════════════════════════════
-    # STEP 1: INPUT IMAGE (5s = 15 frames)
+    # STEP 1: INPUT IMAGE (3s = 9 frames)
     # ═══════════════════════════════════════════
-    for i in range(15):
+    for i in range(9):
         f, d = base(1)
         d.text((LX, LY - 30), "Step 1: Input Image", fill=ACCENT, font=F_PHASE)
 
@@ -383,8 +379,8 @@ def generate():
                              "Input: 640×640 wafer image", ACCENT)
 
         # Arrow to CNN
-        if i >= 5:
-            ap = min(1.0, (i - 5) / 5)
+        if i >= 3:
+            ap = min(1.0, (i - 3) / 4)
             ax1 = LX + dw + 12
             ax2 = int(ax1 + (RX - ax1 - 10) * ap)
             ay = LY + dh // 2
@@ -393,15 +389,8 @@ def generate():
                 d.polygon([(ax2, ay - 8), (ax2 + 14, ay), (ax2, ay + 8)], fill=ACCENT)
                 d.text((ax1 + 8, ay - 25), "CNN backbone", fill=WHITE, font=F_LABEL)
 
-        # Right placeholder
-        if i >= 10:
-            d.rectangle([RX - 4, RY - 4, RX + dw + 4, RY + dh + 4],
-                        fill=PANEL_BG, outline=(40, 50, 65), width=2)
-            d.text((RX + dw // 2 - 60, RY + dh // 2 - 12),
-                   "Processing...", fill=DIM, font=F_BODY)
-
         # Defect hints after full reveal
-        if i >= 8:
+        if i >= 5:
             d2 = ImageDraw.Draw(f)
             draw_defect_hints(d2, real_dets, LX, LY, sc)
 
@@ -412,9 +401,9 @@ def generate():
         frames.append(f)
 
     # ═══════════════════════════════════════════
-    # STEP 2: FEATURE GRID (5s = 15 frames)
+    # STEP 2: FEATURE GRID (3s = 9 frames)
     # ═══════════════════════════════════════════
-    for i in range(15):
+    for i in range(9):
         f, d = base(2)
         d.text((LX, LY - 30), "Step 2: Feature Grid (13×13)", fill=ACCENT, font=F_PHASE)
         draw_wafer_panel(f, wafer_sm, LX, LY, dw, dh, "Original", (60, 70, 90))
@@ -435,9 +424,9 @@ def generate():
         frames.append(f)
 
     # ═══════════════════════════════════════════
-    # STEP 3: SIMULTANEOUS PREDICTION (5s = 15 frames)
+    # STEP 3: SIMULTANEOUS PREDICTION (3s = 9 frames)
     # ═══════════════════════════════════════════
-    for i in range(15):
+    for i in range(9):
         f, d = base(3)
         d.text((LX, LY - 30), "Step 3: Simultaneous Prediction", fill=GREEN, font=F_PHASE)
         draw_wafer_panel(f, wafer_sm, LX, LY, dw, dh, "Original", (60, 70, 90))
@@ -459,9 +448,9 @@ def generate():
         frames.append(f)
 
     # ═══════════════════════════════════════════
-    # STEP 4: RAW CANDIDATE BOXES (5s = 15 frames)
+    # STEP 4: RAW CANDIDATE BOXES (3s = 9 frames)
     # ═══════════════════════════════════════════
-    for i in range(15):
+    for i in range(9):
         f, d = base(4)
         d.text((LX, LY - 30), "Step 4: Raw Candidate Boxes", fill=ORANGE, font=F_PHASE)
         draw_wafer_panel(f, wafer_sm, LX, LY, dw, dh, "Original", (60, 70, 90))
@@ -483,9 +472,9 @@ def generate():
         frames.append(f)
 
     # ═══════════════════════════════════════════
-    # STEP 5: NON-MAX SUPPRESSION (6s = 18 frames)
+    # STEP 5: NON-MAX SUPPRESSION (4s = 12 frames)
     # ═══════════════════════════════════════════
-    for i in range(18):
+    for i in range(12):
         f, d = base(5)
         d.text((LX, LY - 30), "Step 5: Non-Max Suppression", fill=RED, font=F_PHASE)
         draw_wafer_panel(f, wafer_sm, LX, LY, dw, dh, "Original", (60, 70, 90))
@@ -511,10 +500,10 @@ def generate():
         frames.append(f)
 
     # ═══════════════════════════════════════════
-    # STEP 6: FINAL DETECTIONS (4 frames/box + 15 hold)
+    # STEP 6: FINAL DETECTIONS (3 frames/box + 9 hold)
     # ═══════════════════════════════════════════
     for di in range(n_real):
-        for i in range(4):
+        for i in range(3):
             f, d = base(6)
             d.text((LX, LY - 30),
                    f"Step 6: Detection {di + 1}/{n_real}", fill=GREEN, font=F_PHASE)
@@ -523,7 +512,7 @@ def generate():
             d2 = ImageDraw.Draw(f)
             for prev in range(di):
                 draw_final_box(d2, real_dets[prev], RX, RY, sc, 1.0)
-            draw_final_box(d2, real_dets[di], RX, RY, sc, (i + 1) / 4)
+            draw_final_box(d2, real_dets[di], RX, RY, sc, (i + 1) / 3)
             d2.rectangle([RX - 1, RY - 1, RX + dw + 1, RY + dh + 1], outline=GREEN, width=2)
             det = real_dets[di]
             d2.text((RX + dw // 2 - 80, RY + dh + 8),
@@ -536,7 +525,7 @@ def generate():
             frames.append(f)
 
     # Hold final detections
-    for _ in range(15):
+    for _ in range(9):
         f, d = base(6)
         d.text((LX, LY - 30), "All Defects Detected", fill=GREEN, font=F_PHASE)
         draw_wafer_panel(f, wafer_sm, LX, LY, dw, dh, "Original", (60, 70, 90))
@@ -556,9 +545,9 @@ def generate():
         frames.append(f)
 
     # ═══════════════════════════════════════════
-    # CLOSING — Annotated wafer + benchmark numbers (6s = 18 frames)
+    # CLOSING — Annotated wafer + benchmark numbers (4s = 12 frames)
     # ═══════════════════════════════════════════
-    for _ in range(18):
+    for _ in range(12):
         f = Image.new("RGB", (W, H), BG)
         d = ImageDraw.Draw(f)
         draw_header(d)
@@ -597,9 +586,9 @@ def generate():
         ty += 30
         d.text((tx, ty), "YOLOv8-L  |  44M parameters", fill=DIM, font=F_SMALL)
         ty += 25
-        d.text((tx, ty), "github.com/AIML-Engineering-Lab/", fill=DIM, font=F_SMALL)
+        d.text((tx, ty), "github.com/Rajendar-Muddasani-2/", fill=DIM, font=F_SMALL)
         ty += 22
-        d.text((tx, ty), "054_wafer_defect_yolo_detection_mlops", fill=ACCENT, font=F_SMALL)
+        d.text((tx, ty), "yolo-object-detection", fill=ACCENT, font=F_SMALL)
 
         frames.append(f)
 

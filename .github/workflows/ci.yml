@@ -22,11 +22,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f pyproject.toml ]; then pip install -e ".[dev]" 2>/dev/null || pip install -e . 2>/dev/null || true; fi
-          pip install ruff pytest 2>/dev/null || true
+          pip install -e ".[dev]"
       - name: Lint
-        run: ruff check . --ignore E501 2>/dev/null || echo "Lint skipped"
+        run: ruff check src tests scripts
       - name: Test
-        run: pytest tests/ -v --tb=short 2>/dev/null || echo "No tests found"
+        run: pytest tests/test_*.py -v --tb=short
 
