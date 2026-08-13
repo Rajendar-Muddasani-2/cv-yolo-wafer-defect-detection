@@ -6,10 +6,11 @@ the trained checkpoint. Architecture frames are explicitly labeled as schematic.
 """
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps
 
 ROOT = Path(__file__).resolve().parent.parent
 INPUT_IMAGE = ROOT / "outputs" / "realistic_unseen" / "realistic_05.jpg"
@@ -22,14 +23,14 @@ W, H = 1200, 675
 FPS = 4
 FRAME_MS = 250
 
-BG = (8, 12, 18)
-SURFACE = (16, 23, 32)
-SURFACE_2 = (23, 32, 43)
-LINE = (53, 69, 84)
+BG = (5, 12, 11)
+SURFACE = (10, 24, 21)
+SURFACE_2 = (16, 35, 29)
+LINE = (42, 79, 65)
 WHITE = (240, 245, 248)
-MUTED = (155, 171, 184)
-CYAN = (37, 209, 255)
-GREEN = (37, 224, 145)
+MUTED = (157, 181, 171)
+CYAN = (48, 214, 211)
+GREEN = (70, 245, 147)
 YELLOW = (255, 210, 64)
 CORAL = (255, 105, 97)
 
@@ -103,11 +104,72 @@ def get_detections() -> list[dict[str, Any]]:
     return sorted(detections, key=lambda item: item["confidence"], reverse=True)
 
 
+def stylize_wafer(image: Image.Image) -> Image.Image:
+    """Create a green silicon die-map treatment without changing image geometry."""
+    grayscale = ImageEnhance.Contrast(ImageOps.grayscale(image)).enhance(1.35)
+    styled = ImageOps.colorize(grayscale, black=(2, 16, 12), white=(116, 236, 158))
+    overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    center = image.width // 2
+    radius = 292
+
+    for coordinate in range(center - 256, center + 257, 32):
+        offset = coordinate - center
+        span = int(math.sqrt(max(radius * radius - offset * offset, 0)))
+        draw.line(
+            (coordinate, center - span, coordinate, center + span),
+            fill=(75, 255, 158, 52),
+            width=1,
+        )
+        draw.line(
+            (center - span, coordinate, center + span, coordinate),
+            fill=(75, 255, 158, 52),
+            width=1,
+        )
+
+    trace_color = (80, 255, 174, 125)
+    pad_color = (255, 215, 92, 190)
+    traces = [
+        [(146, 270), (226, 270), (226, 220), (302, 220)],
+        [(350, 155), (350, 235), (420, 235), (420, 306)],
+        [(182, 405), (258, 405), (258, 468), (338, 468)],
+        [(390, 390), (468, 390), (468, 338), (525, 338)],
+    ]
+    for points in traces:
+        draw.line(points, fill=trace_color, width=3, joint="curve")
+        for x, y in (points[0], points[-1]):
+            draw.rectangle((x - 4, y - 4, x + 4, y + 4), fill=pad_color)
+
+    draw.ellipse(
+        (center - radius, center - radius, center + radius, center + radius),
+        outline=(100, 255, 180, 180),
+        width=3,
+    )
+    return Image.alpha_composite(styled.convert("RGBA"), overlay).convert("RGB")
+
+
+def draw_circuit_background(draw: ImageDraw.ImageDraw) -> None:
+    """Add restrained semiconductor-routing detail behind the main content."""
+    trace = (19, 55, 45)
+    node = (38, 102, 80)
+    paths = [
+        [(0, 108), (20, 108), (20, 82), (92, 82)],
+        [(1090, 84), (1168, 84), (1168, 125), (1200, 125)],
+        [(0, 560), (58, 560), (58, 580), (140, 580)],
+        [(1060, 570), (1122, 570), (1122, 548), (1200, 548)],
+    ]
+    for points in paths:
+        draw.line(points, fill=trace, width=2)
+        for x, y in (points[0], points[-1]):
+            draw.ellipse((x - 3, y - 3, x + 3, y + 3), fill=node)
+
+
 def canvas(section: str, step: int, total: int = 5) -> tuple[Image.Image, ImageDraw.ImageDraw]:
     frame = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(frame)
+    draw_circuit_background(draw)
     draw.rectangle((0, 0, W, 62), fill=SURFACE)
-    draw.text((34, 19), "WAFER VISION", fill=CYAN, font=F_EYEBROW)
+    draw.text((34, 19), "WAFER VISION", fill=GREEN, font=F_EYEBROW)
     draw.text((190, 18), section, fill=WHITE, font=F_SMALL)
     draw.text((1075, 19), f"{step:02d} / {total:02d}", fill=MUTED, font=F_SMALL)
     draw.line((0, 62, W, 62), fill=LINE, width=1)
@@ -202,20 +264,25 @@ def draw_detection(
 
 
 def cover_scene(
-    image: Image.Image,
+    styled_image: Image.Image,
     detections: list[dict[str, Any]],
     metrics: dict[str, float],
     trt: dict[str, float],
 ) -> Image.Image:
     frame, draw = canvas("SEMICONDUCTOR WAFER DEFECT DETECTION", 1)
     scale, _ = draw_image_panel(
-        frame, image, (34, 90), 475, "Synthetic validation image | actual model input", CYAN
+        frame,
+        styled_image,
+        (34, 90),
+        475,
+        "Stylized die-map view | geometry preserved from model input",
+        GREEN,
     )
     for detection in detections:
         draw_detection(draw, detection, (34, 90), scale)
 
     draw.text((555, 104), "From wafer image", fill=WHITE, font=F_HERO)
-    draw.text((555, 155), "to deployable inference", fill=CYAN, font=F_HERO)
+    draw.text((555, 155), "to deployable inference", fill=GREEN, font=F_HERO)
     draw.text((557, 222), "YOLOv8-L  |  43.64M parameters  |  10 classes", fill=MUTED, font=F_BODY)
     draw.line((557, 268, 1158, 268), fill=LINE, width=1)
 
@@ -228,18 +295,18 @@ def cover_scene(
     footer(
         draw,
         "The goal: localize defect type, position, and confidence in one inference pass.",
-        "Evidence boundary: reported accuracy uses held-out procedurally generated wafers.",
+        "Green die-map is a visual treatment; inference used the untouched synthetic image.",
     )
     return frame
 
 
-def importance_scene(image: Image.Image) -> Image.Image:
+def importance_scene(styled_image: Image.Image) -> Image.Image:
     frame, draw = canvas("WHY THIS PROBLEM MATTERS", 2)
     draw_image_panel(
-        frame, image, (34, 94), 468, "Synthetic wafer used for reproducible validation", LINE
+        frame, styled_image, (34, 94), 468, "Stylized view of the synthetic validation wafer", GREEN
     )
     draw.text((550, 102), "Inspection needs more", fill=WHITE, font=F_TITLE)
-    draw.text((550, 142), "than image classification", fill=CYAN, font=F_TITLE)
+    draw.text((550, 142), "than image classification", fill=GREEN, font=F_TITLE)
 
     card(draw, (550, 205, 835, 340), "WHAT?", ["Classify the defect", "across 10 categories"], CYAN)
     card(draw, (855, 205, 1140, 340), "WHERE?", ["Return a bounding box", "for each prediction"], GREEN)
@@ -385,9 +452,10 @@ def generate() -> None:
     if not detections:
         raise RuntimeError("The selected validation image produced no detections")
 
+    styled_image = stylize_wafer(image)
     frames: list[Image.Image] = []
-    frames.extend([cover_scene(image, detections, metrics, trt)] * 12)
-    frames.extend([importance_scene(image)] * 12)
+    frames.extend([cover_scene(styled_image, detections, metrics, trt)] * 12)
+    frames.extend([importance_scene(styled_image)] * 12)
     for index in range(20):
         frames.append(architecture_scene((index + 1) / 20))
     for index in range(16):
