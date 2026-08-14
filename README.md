@@ -1,6 +1,6 @@
 # GPU-Accelerated Computer Vision for Semiconductor Wafer Defect Detection
 
-[![CI](https://github.com/Rajendar-Muddasani-2/cv-yolo-wafer-defect-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/Rajendar-Muddasani-2/cv-yolo-wafer-defect-detection/actions/workflows/ci.yml)
+[![CI](https://github.com/rajendarmuddasani/cv-yolo-wafer-defect-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/rajendarmuddasani/cv-yolo-wafer-defect-detection/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![YOLOv8](https://img.shields.io/badge/YOLOv8-Large-00FFFF)](https://docs.ultralytics.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -21,7 +21,7 @@ An end-to-end **YOLOv8-L computer vision system** for semiconductor wafer inspec
 |---|---:|---:|---:|---:|---:|
 | YOLOv8-S | 99.10% | 95.25% | 98.62% | 97.93% | 11.2M |
 | YOLOv8-M | 99.16% | **96.05%** | 98.76% | 98.36% | 25.9M |
-| **YOLOv8-L** | **99.22%** | 95.76% | **99.07%** | **98.61%** | 43.7M |
+| **YOLOv8-L** | **99.22%** | 95.76% | **99.07%** | **98.61%** | 43.6M |
 
 The reported training run used 20,000 procedurally generated wafer images across ten classes with a 70/15/15 split. The repository includes an MVTec AD conversion and merge pipeline, but MVTec samples were not part of the reported run because the automated dataset download did not complete. This distinction matters when interpreting the metrics and planning validation on fab data.
 
@@ -104,7 +104,7 @@ The API attempts Triton first and falls back to the local Ultralytics model when
 ### Local Python environment
 
 ```bash
-git clone https://github.com/Rajendar-Muddasani-2/cv-yolo-wafer-defect-detection.git
+git clone https://github.com/rajendarmuddasani/cv-yolo-wafer-defect-detection.git
 cd cv-yolo-wafer-defect-detection
 git lfs install
 git lfs pull
@@ -117,7 +117,9 @@ pip install -e ".[dev]"
 
 ### Run local inference
 
-The included script processes the realistic unseen wafer set and writes annotated images to `outputs/realistic_unseen/annotated`.
+The included script processes the committed realistic unseen wafer set and writes annotated images plus a JSON prediction summary to `outputs/unseen_results`.
+
+The committed [`unseen_inference_results.json`](outputs/unseen_results/unseen_inference_results.json) records a CPU run of `best.pt` over seven images at a 0.25 confidence threshold: 20 predicted boxes, with per-image classes, confidence scores, and coordinates. These predictions are distinct from the explanatory GIF overlays.
 
 ```bash
 python scripts/run_unseen_inference.py

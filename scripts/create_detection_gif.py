@@ -283,7 +283,7 @@ def cover_scene(
 
     draw.text((555, 104), "From wafer image", fill=WHITE, font=F_HERO)
     draw.text((555, 155), "to deployable inference", fill=GREEN, font=F_HERO)
-    draw.text((557, 222), "YOLOv8-L  |  43.64M parameters  |  10 classes", fill=MUTED, font=F_BODY)
+    draw.text((557, 222), "YOLOv8-L  |  43.6M parameters  |  10 classes", fill=MUTED, font=F_BODY)
     draw.line((557, 268, 1158, 268), fill=LINE, width=1)
 
     draw.text((557, 296), f"{metrics['mAP50'] * 100:.2f}%", fill=YELLOW, font=F_METRIC)

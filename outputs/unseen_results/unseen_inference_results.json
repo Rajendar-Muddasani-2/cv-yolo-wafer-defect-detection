@@ -1,0 +1,294 @@
+{
+  "model": "YOLOv8-Large (best.pt)",
+  "conf_threshold": 0.25,
+  "iou_threshold": 0.45,
+  "total_images": 7,
+  "images_with_defects": 7,
+  "clean_images": 0,
+  "defect_detection_rate": 1.0,
+  "total_detections": 20,
+  "mean_detections_per_image": 2.86,
+  "inference_speed": {
+    "mean_ms": 629.6,
+    "fps": 1.6
+  },
+  "class_distribution": {
+    "scratch": 4,
+    "particle": 1,
+    "edge_chip": 4,
+    "void": 2,
+    "crack": 4,
+    "delamination": 5
+  },
+  "per_image": [
+    {
+      "image": "realistic_00.jpg",
+      "num_detections": 3,
+      "inference_ms": 872.0,
+      "detections": [
+        {
+          "class_id": 0,
+          "class_name": "scratch",
+          "confidence": 0.8256,
+          "bbox_xyxy": [
+            253.1,
+            363.3,
+            538.9,
+            438.7
+          ]
+        },
+        {
+          "class_id": 1,
+          "class_name": "particle",
+          "confidence": 0.5652,
+          "bbox_xyxy": [
+            175.0,
+            239.1,
+            194.4,
+            257.7
+          ]
+        },
+        {
+          "class_id": 7,
+          "class_name": "crack",
+          "confidence": 0.3362,
+          "bbox_xyxy": [
+            618.5,
+            276.7,
+            640.0,
+            361.8
+          ]
+        }
+      ]
+    },
+    {
+      "image": "realistic_01.jpg",
+      "num_detections": 2,
+      "inference_ms": 646.3,
+      "detections": [
+        {
+          "class_id": 7,
+          "class_name": "crack",
+          "confidence": 0.9274,
+          "bbox_xyxy": [
+            244.8,
+            286.3,
+            314.3,
+            346.4
+          ]
+        },
+        {
+          "class_id": 2,
+          "class_name": "edge_chip",
+          "confidence": 0.8156,
+          "bbox_xyxy": [
+            59.8,
+            452.7,
+            90.2,
+            492.3
+          ]
+        }
+      ]
+    },
+    {
+      "image": "realistic_02.jpg",
+      "num_detections": 1,
+      "inference_ms": 628.7,
+      "detections": [
+        {
+          "class_id": 0,
+          "class_name": "scratch",
+          "confidence": 0.9451,
+          "bbox_xyxy": [
+            177.4,
+            113.4,
+            418.9,
+            175.8
+          ]
+        }
+      ]
+    },
+    {
+      "image": "realistic_03.jpg",
+      "num_detections": 3,
+      "inference_ms": 557.8,
+      "detections": [
+        {
+          "class_id": 2,
+          "class_name": "edge_chip",
+          "confidence": 0.9024,
+          "bbox_xyxy": [
+            80.8,
+            494.8,
+            114.6,
+            521.2
+          ]
+        },
+        {
+          "class_id": 3,
+          "class_name": "void",
+          "confidence": 0.8696,
+          "bbox_xyxy": [
+            345.8,
+            310.7,
+            451.3,
+            445.8
+          ]
+        },
+        {
+          "class_id": 9,
+          "class_name": "delamination",
+          "confidence": 0.4266,
+          "bbox_xyxy": [
+            363.1,
+            288.7,
+            434.4,
+            367.9
+          ]
+        }
+      ]
+    },
+    {
+      "image": "realistic_04.jpg",
+      "num_detections": 4,
+      "inference_ms": 611.9,
+      "detections": [
+        {
+          "class_id": 9,
+          "class_name": "delamination",
+          "confidence": 0.9402,
+          "bbox_xyxy": [
+            412.3,
+            313.6,
+            455.6,
+            356.5
+          ]
+        },
+        {
+          "class_id": 7,
+          "class_name": "crack",
+          "confidence": 0.902,
+          "bbox_xyxy": [
+            244.7,
+            376.8,
+            348.1,
+            425.4
+          ]
+        },
+        {
+          "class_id": 9,
+          "class_name": "delamination",
+          "confidence": 0.657,
+          "bbox_xyxy": [
+            383.4,
+            284.3,
+            485.5,
+            389.0
+          ]
+        },
+        {
+          "class_id": 0,
+          "class_name": "scratch",
+          "confidence": 0.365,
+          "bbox_xyxy": [
+            347.2,
+            0.0,
+            640.0,
+            215.5
+          ]
+        }
+      ]
+    },
+    {
+      "image": "realistic_05.jpg",
+      "num_detections": 4,
+      "inference_ms": 543.3,
+      "detections": [
+        {
+          "class_id": 2,
+          "class_name": "edge_chip",
+          "confidence": 0.9066,
+          "bbox_xyxy": [
+            20.2,
+            313.8,
+            40.3,
+            331.1
+          ]
+        },
+        {
+          "class_id": 7,
+          "class_name": "crack",
+          "confidence": 0.8949,
+          "bbox_xyxy": [
+            279.9,
+            398.6,
+            405.3,
+            445.9
+          ]
+        },
+        {
+          "class_id": 0,
+          "class_name": "scratch",
+          "confidence": 0.8722,
+          "bbox_xyxy": [
+            387.0,
+            370.2,
+            636.0,
+            419.4
+          ]
+        },
+        {
+          "class_id": 2,
+          "class_name": "edge_chip",
+          "confidence": 0.7812,
+          "bbox_xyxy": [
+            607.6,
+            351.9,
+            640.0,
+            421.3
+          ]
+        }
+      ]
+    },
+    {
+      "image": "realistic_06.jpg",
+      "num_detections": 3,
+      "inference_ms": 547.1,
+      "detections": [
+        {
+          "class_id": 9,
+          "class_name": "delamination",
+          "confidence": 0.8962,
+          "bbox_xyxy": [
+            175.0,
+            285.4,
+            262.0,
+            417.2
+          ]
+        },
+        {
+          "class_id": 9,
+          "class_name": "delamination",
+          "confidence": 0.8072,
+          "bbox_xyxy": [
+            219.8,
+            286.6,
+            260.6,
+            352.9
+          ]
+        },
+        {
+          "class_id": 3,
+          "class_name": "void",
+          "confidence": 0.7615,
+          "bbox_xyxy": [
+            310.7,
+            432.4,
+            341.0,
+            462.9
+          ]
+        }
+      ]
+    }
+  ]
+}

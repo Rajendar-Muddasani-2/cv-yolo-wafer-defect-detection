@@ -1,6 +1,6 @@
 """
 Unseen data inference script for YOLOv8 Wafer Defect Detection.
-Runs best.pt on outputs/unseen_test_images/ and saves annotated results.
+Runs best.pt on outputs/realistic_unseen/ and saves annotated results.
 """
 
 import json
@@ -12,7 +12,7 @@ from ultralytics import YOLO
 # ── Paths ──────────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent
 MODEL_PATH = ROOT / "models" / "best.pt"
-UNSEEN_DIR = ROOT / "outputs" / "unseen_test_images"
+UNSEEN_DIR = ROOT / "outputs" / "realistic_unseen"
 RESULTS_DIR = ROOT / "outputs" / "unseen_results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 

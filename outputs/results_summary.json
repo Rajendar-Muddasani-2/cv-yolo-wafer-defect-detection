@@ -1,6 +1,6 @@
 {
   "model": "YOLOv8-Large",
-  "params_M": 43.7,
+  "params_M": 43.6,
   "dataset": "20K synthetic + MVTec AD",
   "test_metrics": {
     "mAP50": 0.993305704837212,
